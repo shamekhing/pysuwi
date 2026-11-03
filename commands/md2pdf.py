@@ -5,6 +5,8 @@ import argparse
 import html
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 DEFAULT_CSS = """
 @page { size: A4; margin: 2.2cm; }
@@ -15,6 +17,20 @@ code { font-family: monospace; font-size: 9.5pt; }
 table { border-collapse: collapse; }
 td, th { border: 1px solid #999; padding: 4px 8px; }
 """
+
+
+def _safe_url_fetcher(url: str, base_dir: Path, default_url_fetcher):
+    """Allow embedded data and local files beneath the input directory only."""
+    parsed = urlsplit(url)
+    if parsed.scheme == "data":
+        return default_url_fetcher(url)
+    if parsed.scheme != "file" or parsed.netloc not in ("", "localhost"):
+        raise ValueError(f"Blocked resource URL: {url}")
+
+    path = Path(url2pathname(parsed.path)).resolve()
+    if not path.is_relative_to(base_dir):
+        raise ValueError(f"Blocked resource outside input directory: {url}")
+    return default_url_fetcher(url)
 
 
 def run(argv: list[str]) -> int:
@@ -54,7 +70,7 @@ def run(argv: list[str]) -> int:
               file=sys.stderr)
         return 3
     try:
-        from weasyprint import CSS, HTML
+        from weasyprint import CSS, HTML, default_url_fetcher
     except (ImportError, OSError):
         print(f"pysuwi md2pdf: WeasyPrint unavailable. Install with: {hint}",
               file=sys.stderr)
@@ -68,9 +84,16 @@ def run(argv: list[str]) -> int:
         f"<body>{body}</body></html>"
     )
     css_text = args.css.read_text(encoding="utf-8") if args.css else DEFAULT_CSS
+    base_dir = src.resolve().parent
+    url_fetcher = lambda url: _safe_url_fetcher(  # noqa: E731
+        url, base_dir, default_url_fetcher
+    )
 
-    HTML(string=document, base_url=str(src.resolve().parent)).write_pdf(
-        str(dst), stylesheets=[CSS(string=css_text)]
+    HTML(string=document, base_url=str(base_dir), url_fetcher=url_fetcher).write_pdf(
+        str(dst),
+        stylesheets=[
+            CSS(string=css_text, base_url=str(base_dir), url_fetcher=url_fetcher)
+        ],
     )
     print(f"wrote {dst}")
     return 0

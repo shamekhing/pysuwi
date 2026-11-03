@@ -15,6 +15,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
+from typing import TextIO
 
 VERSION = "1.1.0"
 SRC_DIR = Path(__file__).resolve().parent
@@ -83,7 +84,9 @@ def load_plugin(path: Path):
     return module
 
 
-def print_usage(commands: dict[str, Path], stream=sys.stdout) -> None:
+def print_usage(commands: dict[str, Path], stream: TextIO | None = None) -> None:
+    if stream is None:
+        stream = sys.stdout
     rows = [(n, summary(p)) for n, p in commands.items()]
     width = max([len(n) for n, _ in rows] + [len(b) for b in BUILTINS] + [8])
     lines = [
@@ -126,11 +129,16 @@ def doctor() -> int:
 
     check("python >= 3.9", sys.version_info >= (3, 9), sys.version.split()[0])
     check("source checkout", (SRC_DIR / "pysuwi.py").is_file(), str(SRC_DIR))
-    check("launcher link", BIN_LINK.exists() or BIN_LINK.is_symlink(), str(BIN_LINK))
     on_path = shutil.which("pysuwi")
+    check("launcher available",
+          BIN_LINK.exists() or BIN_LINK.is_symlink() or on_path is not None,
+          on_path or str(BIN_LINK))
     check("pysuwi on PATH", on_path is not None,
           on_path or "add ~/.local/bin to PATH and open a new login shell")
-    check("bash completion", COMPLETION_FILE.is_file(), str(COMPLETION_FILE))
+    if COMPLETION_FILE.is_file():
+        check("bash completion", True, str(COMPLETION_FILE))
+    else:
+        print(f"[info] bash completion not installed (optional): {COMPLETION_FILE}")
 
     commands = discover()
     print(f"[info] {len(commands)} plugin(s) found")
@@ -202,9 +210,13 @@ def main(argv: list[str]) -> int:
     return result if isinstance(result, int) else EXIT_OK
 
 
+def cli() -> int:
+    return main(sys.argv[1:])
+
+
 if __name__ == "__main__":
     try:
-        sys.exit(main(sys.argv[1:]))
+        sys.exit(cli())
     except KeyboardInterrupt:
         warn("interrupted")
         sys.exit(EXIT_INTERRUPT)
