@@ -6,7 +6,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Keep a runner with setup-python builds for the declared Python 3.9 minimum.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
